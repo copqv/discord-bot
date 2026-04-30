@@ -2,12 +2,10 @@ import discord
 from discord import app_commands
 import random
 import time
-import os
 
-# ===== TOKEN (SAFE FOR HOSTING) =====
-TOKEN = os.getenv("TOKEN")
+# ⚠️ TEMP ONLY (for testing)
+TOKEN = "PASTE_YOUR_BOT_TOKEN_HERE"
 
-# ===== SERVER ID (for fast slash sync) =====
 GUILD_ID = 1495420238743863528
 
 intents = discord.Intents.default()
@@ -19,61 +17,35 @@ class MyClient(discord.Client):
 
     async def setup_hook(self):
         guild = discord.Object(id=GUILD_ID)
-
-        # Sync commands to your server
         self.tree.copy_global_to(guild=guild)
-        synced = await self.tree.sync(guild=guild)
-
-        print(f"✅ Synced {len(synced)} commands")
+        await self.tree.sync(guild=guild)
+        print("Commands synced")
 
 client = MyClient()
 
-# ===== PING COMMAND =====
-@client.tree.command(name="ping", description="Check bot status")
+@client.tree.command(name="ping", description="Check bot")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("🏓 Pong!")
 
-# ===== MINES COMMAND =====
-@client.tree.command(name="mines", description="Generate mines grid")
-@app_commands.describe(tile_amt="1-24 safe tiles", round_id="36 character ID")
+@client.tree.command(name="mines", description="Mines grid")
 async def mines(interaction: discord.Interaction, tile_amt: int, round_id: str):
 
-    await interaction.response.defer()
+    if len(round_id) != 36:
+        return await interaction.response.send_message("❌ Invalid round ID")
 
-    try:
-        if len(round_id) != 36:
-            return await interaction.followup.send("❌ Round ID must be 36 characters.")
+    grid = ["❌"] * 25
+    for i in random.sample(range(25), tile_amt):
+        grid[i] = "✅"
 
-        if tile_amt < 1 or tile_amt > 24:
-            return await interaction.followup.send("❌ Tile amount must be 1-24.")
+    grid_str = "\n".join(["".join(grid[i:i+5]) for i in range(0, 25, 5)])
 
-        start = time.time()
+    embed = discord.Embed(title="Mines", color=0x2b2d31)
+    embed.add_field(name="Grid", value=f"```{grid_str}```", inline=False)
 
-        grid = ["❌"] * 25
-        safe = random.sample(range(25), tile_amt)
+    await interaction.response.send_message(embed=embed)
 
-        for i in safe:
-            grid[i] = "✅"
-
-        grid_str = "\n".join(["".join(grid[i:i+5]) for i in range(0, 25, 5)])
-
-        chance = random.randint(45, 95)
-
-        embed = discord.Embed(title="💣 Mines Result", color=0x2b2d31)
-        embed.add_field(name="Grid", value=f"```{grid_str}```", inline=False)
-        embed.add_field(name="Accuracy", value=f"{chance}%", inline=True)
-        embed.add_field(name="Round ID", value=round_id, inline=True)
-        embed.set_footer(text=f"Time: {round(time.time() - start, 2)}s")
-
-        await interaction.followup.send(embed=embed)
-
-    except Exception as e:
-        await interaction.followup.send(f"⚠️ Error: {e}")
-
-# ===== READY EVENT =====
 @client.event
 async def on_ready():
-    print(f"🤖 Logged in as {client.user}")
-    print("🚀 Bot is running")
+    print(f"Logged in as {client.user}")
 
 client.run(TOKEN)

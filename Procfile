@@ -1,1 +1,1 @@
-worker: python bot.py
+worker: python mines_bot.py

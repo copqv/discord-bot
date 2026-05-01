@@ -33,8 +33,6 @@ intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
-cooldowns = {}
-
 # =========================
 # CLOSE TICKET BUTTON
 # =========================
@@ -131,7 +129,6 @@ def make_seed(r):
 @tree.command(name="mines")
 async def mines(interaction: discord.Interaction, roundid: str, mines: int):
 
-    # 🔒 ROLE CHECK
     if MINES_ROLE_ID not in [role.id for role in interaction.user.roles]:
         return await interaction.response.send_message(
             f"❌ You need <@&{MINES_ROLE_ID}> to use this.",
@@ -187,7 +184,6 @@ async def mines(interaction: discord.Interaction, roundid: str, mines: int):
 @tree.command(name="towers")
 async def towers(interaction: discord.Interaction, roundid: str):
 
-    # 🔒 ROLE CHECK
     if TOWERS_ROLE_ID not in [role.id for role in interaction.user.roles]:
         return await interaction.response.send_message(
             f"❌ You need <@&{TOWERS_ROLE_ID}> to use this.",
@@ -250,9 +246,19 @@ async def shop(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, view=ShopView())
 
 # =========================
+# BOT READY + STATUS
+# =========================
 @client.event
 async def on_ready():
     await tree.sync()
+
+    await client.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.watching,
+            name="Cop Predictions"
+        )
+    )
+
     print(f"✅ Logged in as {client.user}")
 
 # =========================

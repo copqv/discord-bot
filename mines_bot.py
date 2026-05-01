@@ -3,7 +3,7 @@ from discord import app_commands
 import hashlib, os, time, random, asyncio
 
 # =========================
-# SAFE TOKEN HANDLING
+# TOKEN (Railway)
 # =========================
 TOKEN = os.getenv("TOKEN")
 
@@ -15,6 +15,10 @@ if not TOKEN:
 # =========================
 OWNER_ID = 632993587994296323
 CATEGORY_ID = 1499570366350360687
+
+# 🔒 ROLE IDS (PUT YOUR REAL ONES)
+MINES_ROLE_ID = 1499770879792513054
+TOWERS_ROLE_ID = 1499771019391537212
 
 # =========================
 # EMOJIS
@@ -127,6 +131,13 @@ def make_seed(r):
 @tree.command(name="mines")
 async def mines(interaction: discord.Interaction, roundid: str, mines: int):
 
+    # 🔒 ROLE CHECK
+    if MINES_ROLE_ID not in [role.id for role in interaction.user.roles]:
+        return await interaction.response.send_message(
+            f"❌ You need <@&{MINES_ROLE_ID}> to use this.",
+            ephemeral=True
+        )
+
     if mines < 1 or mines > 20:
         return await interaction.response.send_message("Use 1–20 mines.", ephemeral=True)
 
@@ -171,10 +182,17 @@ async def mines(interaction: discord.Interaction, roundid: str, mines: int):
     await msg.edit(embed=embed)
 
 # =========================
-# TOWERS COMMAND (ANIMATED)
+# TOWERS COMMAND
 # =========================
 @tree.command(name="towers")
 async def towers(interaction: discord.Interaction, roundid: str):
+
+    # 🔒 ROLE CHECK
+    if TOWERS_ROLE_ID not in [role.id for role in interaction.user.roles]:
+        return await interaction.response.send_message(
+            f"❌ You need <@&{TOWERS_ROLE_ID}> to use this.",
+            ephemeral=True
+        )
 
     random.seed(make_seed(roundid))
     path=[random.randint(0,2) for _ in range(8)]
@@ -210,7 +228,7 @@ async def towers(interaction: discord.Interaction, roundid: str):
     await msg.edit(embed=embed)
 
 # =========================
-# SHOP COMMAND (OWNER ONLY)
+# SHOP COMMAND
 # =========================
 @tree.command(name="shop")
 async def shop(interaction: discord.Interaction):

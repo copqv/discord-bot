@@ -2,26 +2,37 @@ import discord
 from discord import app_commands
 import hashlib, os, time, random, asyncio
 
-# ===== TOKEN FROM RAILWAY =====
+# =========================
+# SAFE TOKEN HANDLING
+# =========================
 TOKEN = os.getenv("TOKEN")
 
+if not TOKEN:
+    raise Exception("❌ TOKEN not found. Add it in Railway Variables.")
+
+# =========================
+# CONFIG
+# =========================
 OWNER_ID = 632993587994296323
-GUILD_ID = 1495420238743863528
 CATEGORY_ID = 1499570366350360687
 
+# =========================
+# EMOJIS
+# =========================
 SAFE = "<:safe:1499548265102839949>"
 MINE = "<:BombShock:1499540896658755834>"
 SCAN = "<:Ticks:1499558562861678633>"
 EMPTY = "<a:Loading:1499558187714478232>"
 
+# =========================
 intents = discord.Intents.default()
-intents.guilds = True
-
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
 cooldowns = {}
 
+# =========================
+# CLOSE TICKET BUTTON
 # =========================
 class CloseTicketView(discord.ui.View):
     def __init__(self):
@@ -33,6 +44,8 @@ class CloseTicketView(discord.ui.View):
         await asyncio.sleep(1)
         await interaction.channel.delete()
 
+# =========================
+# SHOP VIEW
 # =========================
 class ShopView(discord.ui.View):
     def __init__(self):
@@ -64,13 +77,15 @@ class ShopView(discord.ui.View):
         await interaction.response.send_message(f"✅ {channel.mention}", ephemeral=True)
 
     @discord.ui.button(label="Buy Mines Access 250 Robux", style=discord.ButtonStyle.danger, emoji="💣")
-    async def monthly(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.create_ticket(interaction, "Buy Mines", "250 Robux")
+    async def mines(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.create_ticket(interaction, "Mines Access", "250 Robux")
 
-    @discord.ui.button(label="Buy Mines + Tower Access 350 Robux", style=discord.ButtonStyle.primary, emoji="💎")
-    async def lifetime(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.create_ticket(interaction, "Buy Mines + Towers", "350 Robux")
+    @discord.ui.button(label="Buy Mines + Towers 350 Robux", style=discord.ButtonStyle.primary, emoji="💎")
+    async def combo(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.create_ticket(interaction, "Mines + Towers", "350 Robux")
 
+# =========================
+# MINES LOGIC
 # =========================
 def generate_mines(seed, mines):
     h = hashlib.sha256(seed.encode()).hexdigest()
@@ -103,28 +118,22 @@ def build_scan_frame(step):
 def progress_bar(p):
     return "█"*int(p*10)+"░"*(10-int(p*10))
 
-def make_seed(r): 
-    return r+"-"+os.urandom(8).hex()
+def make_seed(r):
+    return r + "-" + os.urandom(8).hex()
 
+# =========================
+# MINES COMMAND
 # =========================
 @tree.command(name="mines")
 async def mines(interaction: discord.Interaction, roundid: str, mines: int):
 
-    uid = interaction.user.id
-    now = time.time()
-
-    if uid in cooldowns and now - cooldowns[uid] < 2:
-        return await interaction.response.send_message("⏳ Slow down...", ephemeral=True)
-
-    cooldowns[uid] = now
-
     if mines < 1 or mines > 20:
-        return await interaction.response.send_message("Use 1–20 mines.")
+        return await interaction.response.send_message("Use 1–20 mines.", ephemeral=True)
 
     seed = make_seed(roundid)
     pos = generate_mines(seed, mines)
 
-    embed = discord.Embed(title="⚡Cop Predictor", color=0x1e1f22)
+    embed = discord.Embed(title="⚡ Cop Predictor", color=0x1e1f22)
     embed.description = "Initializing..."
 
     await interaction.response.send_message(embed=embed)
@@ -140,7 +149,7 @@ async def mines(interaction: discord.Interaction, roundid: str, mines: int):
         except:
             pass
 
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.04)
 
     embed = discord.Embed(
         title="🎯 Safe Tiles Revealed",
@@ -148,8 +157,8 @@ async def mines(interaction: discord.Interaction, roundid: str, mines: int):
         color=0x1e1f22
     )
 
-    embed.add_field(name=f"{MINE} Mines", value=f"**{mines}**", inline=True)
-    embed.add_field(name=f"{SAFE} Safe", value="**Max 5**", inline=True)
+    embed.add_field(name=f"{MINE} Mines", value=f"{mines}", inline=True)
+    embed.add_field(name=f"{SAFE} Safe", value="Max 5", inline=True)
 
     embed.add_field(
         name="🧠 System",
@@ -157,17 +166,15 @@ async def mines(interaction: discord.Interaction, roundid: str, mines: int):
         inline=False
     )
 
-    embed.set_footer(text="Cop Predictor • Developed by cop")
+    embed.set_footer(text="Cop Predictor • Engine Stable")
 
     await msg.edit(embed=embed)
 
 # =========================
+# TOWERS COMMAND (ANIMATED)
+# =========================
 @tree.command(name="towers")
-@app_commands.choices(mode=[
-    app_commands.Choice(name="Easy",value="easy"),
-    app_commands.Choice(name="Hard",value="hard"),
-])
-async def towers(interaction: discord.Interaction, roundid: str, mode: app_commands.Choice[str]):
+async def towers(interaction: discord.Interaction, roundid: str):
 
     random.seed(make_seed(roundid))
     path=[random.randint(0,2) for _ in range(8)]
@@ -182,8 +189,8 @@ async def towers(interaction: discord.Interaction, roundid: str, mode: app_comma
             temp[i][c]=SCAN
 
         grid="\n".join(" ".join(r) for r in temp[::-1])
-        await msg.edit(embed=discord.Embed(title="🗼 Scan",description=grid))
-        await asyncio.sleep(0.1)
+        await msg.edit(embed=discord.Embed(title="🗼 Scanning Towers...",description=grid))
+        await asyncio.sleep(0.08)
 
     reveal=[["⬛"]*3 for _ in range(8)]
 
@@ -192,38 +199,35 @@ async def towers(interaction: discord.Interaction, roundid: str, mode: app_comma
             reveal[i][c]=SAFE if c==path[i] else MINE
 
         grid="\n".join(" ".join(r) for r in reveal[::-1])
-        await msg.edit(embed=discord.Embed(title="🎯 Reveal",description=grid))
-        await asyncio.sleep(0.12)
+        await msg.edit(embed=discord.Embed(title="🎯 Revealing Path...",description=grid))
+        await asyncio.sleep(0.1)
 
     final="\n".join(" ".join(r) for r in reveal[::-1])
 
-    embed=discord.Embed(title="🗼 Complete",description=final)
-    embed.add_field(name="Mode",value=mode.value.capitalize())
+    embed=discord.Embed(title="🗼 Tower Path Complete",description=final)
+    embed.set_footer(text="Safe route calculated")
 
     await msg.edit(embed=embed)
 
+# =========================
+# SHOP COMMAND (OWNER ONLY)
 # =========================
 @tree.command(name="shop")
 async def shop(interaction: discord.Interaction):
 
     if interaction.user.id != OWNER_ID:
-        return await interaction.response.send_message("❌ You can't use this command.", ephemeral=True)
+        return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
 
     embed = discord.Embed(
         title="🛒 Cop Predictor Shop",
         description=(
-            "Purchase The Cop Predictor Here!\n"
-            "Click a button down below.\n"
-            "Select wich version you would like.\n\n"
-            "📅 **Mines Access — 250 Robux**\n"
-            "💎 **Mines + Towers Access — 350 Robux**\n"
-            "└ 📌 Boosted accuracy on both!\n\n"
-            "💳 Click a button below to select a payment method."
+            "Purchase access below:\n\n"
+            "💣 Mines — 250 Robux\n"
+            "💎 Mines + Towers — 350 Robux\n\n"
+            "Click a button below."
         ),
         color=0x2b0d0d
     )
-
-    embed.set_footer(text="Cop Predictor • Developed By Cop")
 
     await interaction.response.send_message(embed=embed, view=ShopView())
 
@@ -231,7 +235,7 @@ async def shop(interaction: discord.Interaction):
 @client.event
 async def on_ready():
     await tree.sync()
-    print(f"Logged in as {client.user}")
+    print(f"✅ Logged in as {client.user}")
 
+# =========================
 client.run(TOKEN)
-# update

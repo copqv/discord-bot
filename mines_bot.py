@@ -164,7 +164,7 @@ async def mines(interaction: discord.Interaction, roundid: str, mines: int):
     embed.add_field(name=f"{MINE} Mines", value=f"**{mines}**", inline=True)
     embed.add_field(name=f"{SAFE} Safe", value="**Max 5**", inline=True)
 
-    embed.set_footer(text="Cop Predictor • Engine Stable")
+    embed.set_footer(text="Cop Predictor • Developed By Cop")
 
     await msg.edit(embed=embed)
 

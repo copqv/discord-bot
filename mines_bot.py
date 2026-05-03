@@ -3,39 +3,35 @@ from discord import app_commands
 import hashlib, os, time, random, asyncio
 
 # =========================
-# TOKEN (Railway)
-# =========================
+# TOKEN FROM RAILWAY
 TOKEN = os.getenv("TOKEN")
-
 if not TOKEN:
-    raise Exception("❌ TOKEN not found. Add it in Railway Variables.")
+    raise Exception("❌ TOKEN not found. Add it in Railway Service Variables.")
 
-# =========================
-# CONFIG
-# =========================
 OWNER_ID = 632993587994296323
+GUILD_ID = 1495420238743863528
 CATEGORY_ID = 1499570366350360687
 
-# 🔒 ROLE IDS (PUT YOUR REAL ONES)
-MINES_ROLE_ID = 1499770879792513054
-TOWERS_ROLE_ID = 1499771019391537212
+# ROLE NAMES (CHANGE IF NEEDED)
+MINES_ROLE = "Mines"
+TOWERS_ROLE = "Towers"
 
-# =========================
-# EMOJIS
-# =========================
 SAFE = "<:safe:1499548265102839949>"
 MINE = "<:BombShock:1499540896658755834>"
 SCAN = "<:Ticks:1499558562861678633>"
 EMPTY = "<a:Loading:1499558187714478232>"
 
-# =========================
 intents = discord.Intents.default()
+intents.guilds = True
+intents.members = True  # REQUIRED FOR ROLE CHECKS
+
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
+cooldowns = {}
+
 # =========================
-# CLOSE TICKET BUTTON
-# =========================
+# CLOSE TICKET VIEW
 class CloseTicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -47,8 +43,7 @@ class CloseTicketView(discord.ui.View):
         await interaction.channel.delete()
 
 # =========================
-# SHOP VIEW
-# =========================
+# SHOP VIEW (FIXED)
 class ShopView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -78,16 +73,19 @@ class ShopView(discord.ui.View):
 
         await interaction.response.send_message(f"✅ {channel.mention}", ephemeral=True)
 
-    @discord.ui.button(label="Buy Mines Access 250 Robux", style=discord.ButtonStyle.danger, emoji="💣")
-    async def mines(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.create_ticket(interaction, "Mines Access", "250 Robux")
+    @discord.ui.button(label="Buy Mines Access 250 Robux", style=discord.ButtonStyle.danger, emoji="💣", custom_id="buy_mines")
+    async def monthly(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.create_ticket(interaction, "Buy Mines", "250 Robux")
 
-    @discord.ui.button(label="Buy Mines + Towers 350 Robux", style=discord.ButtonStyle.primary, emoji="💎")
-    async def combo(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.create_ticket(interaction, "Mines + Towers", "350 Robux")
+    @discord.ui.button(label="Buy Mines + Tower Access 350 Robux", style=discord.ButtonStyle.primary, emoji="💎", custom_id="buy_bundle")
+    async def lifetime(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.create_ticket(interaction, "Buy Mines + Towers", "350 Robux")
 
 # =========================
-# MINES LOGIC
+# ROLE CHECK FUNCTION
+def has_role(user, role_name):
+    return any(role.name == role_name for role in user.roles)
+
 # =========================
 def generate_mines(seed, mines):
     h = hashlib.sha256(seed.encode()).hexdigest()
@@ -120,28 +118,31 @@ def build_scan_frame(step):
 def progress_bar(p):
     return "█"*int(p*10)+"░"*(10-int(p*10))
 
-def make_seed(r):
-    return r + "-" + os.urandom(8).hex()
+def make_seed(r): 
+    return r+"-"+os.urandom(8).hex()
 
-# =========================
-# MINES COMMAND
 # =========================
 @tree.command(name="mines")
 async def mines(interaction: discord.Interaction, roundid: str, mines: int):
 
-    if MINES_ROLE_ID not in [role.id for role in interaction.user.roles]:
-        return await interaction.response.send_message(
-            f"❌ You need <@&{MINES_ROLE_ID}> to use this.",
-            ephemeral=True
-        )
+    if not has_role(interaction.user, MINES_ROLE):
+        return await interaction.response.send_message("❌ You need the Mines role.", ephemeral=True)
+
+    uid = interaction.user.id
+    now = time.time()
+
+    if uid in cooldowns and now - cooldowns[uid] < 2:
+        return await interaction.response.send_message("⏳ Slow down...", ephemeral=True)
+
+    cooldowns[uid] = now
 
     if mines < 1 or mines > 20:
-        return await interaction.response.send_message("Use 1–20 mines.", ephemeral=True)
+        return await interaction.response.send_message("Use 1–20 mines.")
 
     seed = make_seed(roundid)
     pos = generate_mines(seed, mines)
 
-    embed = discord.Embed(title="⚡ Cop Predictor", color=0x1e1f22)
+    embed = discord.Embed(title="⚡Cop Predictor", color=0x1e1f22)
     embed.description = "Initializing..."
 
     await interaction.response.send_message(embed=embed)
@@ -151,13 +152,8 @@ async def mines(interaction: discord.Interaction, roundid: str, mines: int):
         p = (i+1)/25
         embed.description = build_scan_frame(i)
         embed.set_footer(text=f"{int(p*100)}% | {progress_bar(p)}")
-
-        try:
-            await msg.edit(embed=embed)
-        except:
-            pass
-
-        await asyncio.sleep(0.04)
+        await msg.edit(embed=embed)
+        await asyncio.sleep(0.05)
 
     embed = discord.Embed(
         title="🎯 Safe Tiles Revealed",
@@ -165,30 +161,19 @@ async def mines(interaction: discord.Interaction, roundid: str, mines: int):
         color=0x1e1f22
     )
 
-    embed.add_field(name=f"{MINE} Mines", value=f"{mines}", inline=True)
-    embed.add_field(name=f"{SAFE} Safe", value="Max 5", inline=True)
-
-    embed.add_field(
-        name="🧠 System",
-        value="Scan Complete\nPattern Match ✓\nGrid Stabilized ✓",
-        inline=False
-    )
+    embed.add_field(name=f"{MINE} Mines", value=f"**{mines}**", inline=True)
+    embed.add_field(name=f"{SAFE} Safe", value="**Max 5**", inline=True)
 
     embed.set_footer(text="Cop Predictor • Engine Stable")
 
     await msg.edit(embed=embed)
 
 # =========================
-# TOWERS COMMAND
-# =========================
 @tree.command(name="towers")
 async def towers(interaction: discord.Interaction, roundid: str):
 
-    if TOWERS_ROLE_ID not in [role.id for role in interaction.user.roles]:
-        return await interaction.response.send_message(
-            f"❌ You need <@&{TOWERS_ROLE_ID}> to use this.",
-            ephemeral=True
-        )
+    if not has_role(interaction.user, TOWERS_ROLE):
+        return await interaction.response.send_message("❌ You need the Towers role.", ephemeral=True)
 
     random.seed(make_seed(roundid))
     path=[random.randint(0,2) for _ in range(8)]
@@ -203,8 +188,8 @@ async def towers(interaction: discord.Interaction, roundid: str):
             temp[i][c]=SCAN
 
         grid="\n".join(" ".join(r) for r in temp[::-1])
-        await msg.edit(embed=discord.Embed(title="🗼 Scanning Towers...",description=grid))
-        await asyncio.sleep(0.08)
+        await msg.edit(embed=discord.Embed(title="🗼 Scan",description=grid))
+        await asyncio.sleep(0.1)
 
     reveal=[["⬛"]*3 for _ in range(8)]
 
@@ -213,32 +198,23 @@ async def towers(interaction: discord.Interaction, roundid: str):
             reveal[i][c]=SAFE if c==path[i] else MINE
 
         grid="\n".join(" ".join(r) for r in reveal[::-1])
-        await msg.edit(embed=discord.Embed(title="🎯 Revealing Path...",description=grid))
-        await asyncio.sleep(0.1)
+        await msg.edit(embed=discord.Embed(title="🎯 Reveal",description=grid))
+        await asyncio.sleep(0.12)
 
-    final="\n".join(" ".join(r) for r in reveal[::-1])
-
-    embed=discord.Embed(title="🗼 Tower Path Complete",description=final)
-    embed.set_footer(text="Safe route calculated")
-
-    await msg.edit(embed=embed)
-
-# =========================
-# SHOP COMMAND
 # =========================
 @tree.command(name="shop")
 async def shop(interaction: discord.Interaction):
 
     if interaction.user.id != OWNER_ID:
-        return await interaction.response.send_message("❌ Not allowed.", ephemeral=True)
+        return await interaction.response.send_message("❌ You can't use this command.", ephemeral=True)
 
     embed = discord.Embed(
         title="🛒 Cop Predictor Shop",
         description=(
-            "Purchase access below:\n\n"
-            "💣 Mines — 250 Robux\n"
-            "💎 Mines + Towers — 350 Robux\n\n"
-            "Click a button below."
+            "Purchase The Cop Predictor Here!\n"
+            "Click a button below.\n\n"
+            "📅 Mines — 250 Robux\n"
+            "💎 Mines + Towers — 350 Robux"
         ),
         color=0x2b0d0d
     )
@@ -246,11 +222,13 @@ async def shop(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, view=ShopView())
 
 # =========================
-# BOT READY + STATUS
-# =========================
 @client.event
 async def on_ready():
     await tree.sync()
+
+    # FIX: REGISTER BUTTONS AFTER RESTART
+    client.add_view(ShopView())
+    client.add_view(CloseTicketView())
 
     await client.change_presence(
         activity=discord.Activity(
@@ -259,7 +237,7 @@ async def on_ready():
         )
     )
 
-    print(f"✅ Logged in as {client.user}")
+    print(f"Logged in as {client.user}")
 
 # =========================
 client.run(TOKEN)

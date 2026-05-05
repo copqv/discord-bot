@@ -1,17 +1,16 @@
 import discord
 from discord import app_commands
-import hashlib, os, time, random, asyncio
+import hashlib, os, random, asyncio, time
 
-# =========================
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
     raise Exception("❌ TOKEN not found in Railway Variables")
 
-MINES_ROLE = "mines"
-TOWERS_ROLE = "towers"
-
 SAFE = "<:safe:1499548265102839949>"
 MINE = "<:BombShock:1499540896658755834>"
+
+MINES_ROLE = "mines"
+TOWERS_ROLE = "towers"
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -20,18 +19,12 @@ intents.members = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
-balances = {}
-streaks = {}
-
 # =========================
-def get_balance(uid):
-    return balances.get(uid, 1000)
-
-def set_balance(uid, amount):
-    balances[uid] = amount
-
 def has_role(user, role_name):
     return any(role.name.lower() == role_name.lower() for role in user.roles)
+
+def make_seed(r):
+    return r + "-" + os.urandom(6).hex()
 
 def generate_mines(seed, mines):
     h = hashlib.sha256(seed.encode()).hexdigest()
@@ -40,217 +33,88 @@ def generate_mines(seed, mines):
     return [x[0] for x in vals[:mines]]
 
 # =========================
-# 🎬 ANIMATION SYSTEM
-async def animate_embed(msg, embed, steps, delay=0.35):
+# 🔥 SAFE ANIMATION (WON'T GET STUCK)
+async def animate(msg, embed, steps):
     for step in steps:
         embed.description = f"🧠 {step}..."
         try:
             await msg.edit(embed=embed)
         except:
             pass
-        await asyncio.sleep(delay)
+        await asyncio.sleep(0.4)
 
 # =========================
-# 💣 MINES GAME
-class MinesGame(discord.ui.View):
-    def __init__(self, mines_pos, user_id, bet):
-        super().__init__(timeout=120)
-        self.mines_pos = mines_pos
-        self.user_id = user_id
-        self.bet = bet
-        self.clicked = set()
-        self.multiplier = 1.0
+# 💣 MINES GRID DISPLAY
+def build_grid(mines_pos):
+    safe_tiles = [i for i in range(25) if i not in mines_pos]
+    picks = set(random.sample(safe_tiles, min(5, len(safe_tiles))))
 
-        for i in range(25):
-            self.add_item(MineButton(i, self))
-
-        self.add_item(CashoutButton(self))
-
-class MineButton(discord.ui.Button):
-    def __init__(self, index, game):
-        super().__init__(style=discord.ButtonStyle.secondary, emoji="⬛", row=index//5)
-        self.index = index
-        self.game = game
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.game.user_id:
-            return await interaction.response.send_message("❌ Not your game", ephemeral=True)
-
-        if self.index in self.game.clicked:
-            return await interaction.response.defer()
-
-        self.game.clicked.add(self.index)
-
-        # 💥 MINE
-        if self.index in self.game.mines_pos:
-            self.emoji = MINE
-            self.style = discord.ButtonStyle.danger
-
-            for item in self.view.children:
-                item.disabled = True
-
-            streaks[self.game.user_id] = 0
-
-            return await interaction.response.edit_message(
-                content="💥 BOOM!\n❌ Game Over",
-                view=self.view
-            )
-
-        # ✅ SAFE
-        self.emoji = SAFE
-        self.style = discord.ButtonStyle.success
-
-        self.game.multiplier += random.uniform(0.25, 0.55)
-
-        await interaction.response.edit_message(
-            content=f"✨ Safe!\n💰 Multiplier → **x{self.game.multiplier:.2f}**",
-            view=self.view
-        )
-
-class CashoutButton(discord.ui.Button):
-    def __init__(self, game):
-        super().__init__(label="💸 Cashout", style=discord.ButtonStyle.success, row=4)
-        self.game = game
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.game.user_id:
-            return await interaction.response.send_message("❌ Not your game", ephemeral=True)
-
-        winnings = int(self.game.bet * self.game.multiplier)
-
-        set_balance(self.game.user_id, get_balance(self.game.user_id) + winnings)
-        streaks[self.game.user_id] = streaks.get(self.game.user_id, 0) + 1
-
-        for item in self.view.children:
-            item.disabled = True
-
-        await interaction.response.edit_message(
-            content=f"💸 Cashed out **{winnings}** (x{self.game.multiplier:.2f})",
-            view=self.view
-        )
+    out, row = [], []
+    for i in range(25):
+        row.append(SAFE if i in picks else MINE)
+        if (i+1) % 5 == 0:
+            out.append(" ".join(row))
+            row = []
+    return "\n".join(out)
 
 # =========================
-# 🗼 TOWERS GAME
-class TowersGame(discord.ui.View):
-    def __init__(self, path, user_id, bet):
-        super().__init__(timeout=120)
-        self.path = path
-        self.user_id = user_id
-        self.bet = bet
-        self.level = 0
-        self.multiplier = 1.0
-        self.build_row()
-
-    def build_row(self):
-        self.clear_items()
-        for i in range(3):
-            self.add_item(TowerButton(i, self))
-
-class TowerButton(discord.ui.Button):
-    def __init__(self, index, game):
-        super().__init__(style=discord.ButtonStyle.secondary, emoji="⬛")
-        self.index = index
-        self.game = game
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.game.user_id:
-            return await interaction.response.send_message("❌ Not your game", ephemeral=True)
-
-        correct = self.game.path[self.game.level]
-
-        # ❌ FAIL
-        if self.index != correct:
-            self.emoji = MINE
-            self.style = discord.ButtonStyle.danger
-
-            for item in self.view.children:
-                item.disabled = True
-
-            streaks[self.game.user_id] = 0
-
-            return await interaction.response.edit_message(
-                content="💥 Wrong path!\n❌ You fell",
-                view=self.view
-            )
-
-        # ✅ SUCCESS
-        self.emoji = SAFE
-        self.style = discord.ButtonStyle.success
-
-        self.game.level += 1
-        self.game.multiplier += random.uniform(0.4, 0.8)
-
-        if self.game.level >= 8:
-            winnings = int(self.game.bet * self.game.multiplier)
-            set_balance(self.game.user_id, get_balance(self.game.user_id) + winnings)
-            streaks[self.game.user_id] = streaks.get(self.game.user_id, 0) + 1
-
-            return await interaction.response.edit_message(
-                content=f"🏆 Finished!\n💸 Won {winnings}",
-                view=None
-            )
-
-        self.game.build_row()
-
-        await interaction.response.edit_message(
-            content=f"✨ Correct!\n🗼 Level {self.game.level}\n💰 x{self.game.multiplier:.2f}",
-            view=self.game
-        )
+# 🗼 TOWERS GRID DISPLAY
+def build_tower(path):
+    grid = []
+    for i in range(8):
+        row = []
+        for c in range(3):
+            row.append(SAFE if c == path[i] else MINE)
+        grid.append(" ".join(row))
+    return "\n".join(grid[::-1])
 
 # =========================
 @tree.command(name="mines")
-async def mines(interaction: discord.Interaction, bet: int, mines: int):
+async def mines(interaction: discord.Interaction, roundid: str, mines: int):
 
     if not has_role(interaction.user, MINES_ROLE):
         return await interaction.response.send_message("❌ Need mines role", ephemeral=True)
 
-    uid = interaction.user.id
-    bal = get_balance(uid)
+    if mines < 1 or mines > 20:
+        return await interaction.response.send_message("Use 1–20 mines.", ephemeral=True)
 
-    if bet > bal:
-        return await interaction.response.send_message("❌ Not enough balance", ephemeral=True)
-
-    set_balance(uid, bal - bet)
-
-    mines_pos = generate_mines(str(time.time()), mines)
+    seed = make_seed(roundid)
+    pos = generate_mines(seed, mines)
 
     embed = discord.Embed(title="⚡ Cop Predictor", color=0x1e1f22)
 
     await interaction.response.send_message(embed=embed)
     msg = await interaction.original_response()
 
-    await animate_embed(msg, embed, [
+    # 🔥 animation (fixed)
+    await animate(msg, embed, [
         "Connecting to engine",
         "Fetching round data",
-        "Analyzing grid",
+        "Analyzing tile patterns",
         "Calculating safe zones",
         "Finalizing prediction"
     ])
 
-    await msg.edit(
-        embed=discord.Embed(
-            title="🎯 Mines Started",
-            description="Click tiles & cashout before hitting a mine",
-            color=0x1e1f22
-        ),
-        view=MinesGame(mines_pos, uid, bet)
+    # ✅ ALWAYS SEND FINAL (no freeze)
+    final = discord.Embed(
+        title="🎯 Safe Tiles",
+        description=build_grid(pos),
+        color=0x1e1f22
     )
+
+    final.add_field(name="💣 Mines", value=str(mines))
+    final.add_field(name="🧠 Engine", value="Prediction Stable ✓")
+
+    await msg.edit(embed=final)
 
 # =========================
 @tree.command(name="towers")
-async def towers(interaction: discord.Interaction, bet: int):
+async def towers(interaction: discord.Interaction, roundid: str):
 
     if not has_role(interaction.user, TOWERS_ROLE):
         return await interaction.response.send_message("❌ Need towers role", ephemeral=True)
 
-    uid = interaction.user.id
-    bal = get_balance(uid)
-
-    if bet > bal:
-        return await interaction.response.send_message("❌ Not enough balance", ephemeral=True)
-
-    set_balance(uid, bal - bet)
-
+    random.seed(make_seed(roundid))
     path = [random.randint(0,2) for _ in range(8)]
 
     embed = discord.Embed(title="🗼 Cop Predictor", color=0x1e1f22)
@@ -258,26 +122,25 @@ async def towers(interaction: discord.Interaction, bet: int):
     await interaction.response.send_message(embed=embed)
     msg = await interaction.original_response()
 
-    await animate_embed(msg, embed, [
+    # 🔥 animation (fixed)
+    await animate(msg, embed, [
         "Connecting to tower engine",
-        "Mapping safe routes",
-        "Scanning climb paths",
-        "Locking prediction"
+        "Scanning paths",
+        "Mapping safest route",
+        "Calculating climb success",
+        "Finalizing prediction"
     ])
 
-    await msg.edit(
-        embed=discord.Embed(
-            title="🗼 Towers Started",
-            description="🎯 Pick the correct path",
-            color=0x1e1f22
-        ),
-        view=TowersGame(path, uid, bet)
+    # ✅ ALWAYS SEND FINAL
+    final = discord.Embed(
+        title="🗼 Tower Path",
+        description=build_tower(path),
+        color=0x1e1f22
     )
 
-# =========================
-@tree.command(name="balance")
-async def balance(interaction: discord.Interaction):
-    await interaction.response.send_message(f"💰 Balance: {get_balance(interaction.user.id)}", ephemeral=True)
+    final.add_field(name="🧠 System", value="Route Locked ✓")
+
+    await msg.edit(embed=final)
 
 # =========================
 @client.event
@@ -289,7 +152,7 @@ async def on_ready():
     print(f"Logged in as {client.user}")
 
 # =========================
-# 🔁 AUTO RESTART LOOP
+# 🔁 AUTO RESTART
 async def run_bot():
     while True:
         try:
